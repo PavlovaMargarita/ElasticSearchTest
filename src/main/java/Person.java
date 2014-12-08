@@ -1,6 +1,9 @@
+import java.sql.Date;
+
 public class Person{
     private String firstName;
     private String lastName;
+    private Date date;
     public Person(){}
     public Person(String firstName, String lastName){
         this.firstName = firstName;
@@ -21,6 +24,14 @@ public class Person{
 
     public void setLastName(String lastName) {
         this.lastName = lastName;
+    }
+
+    public Date getDate() {
+        return date;
+    }
+
+    public void setDate(Date date) {
+        this.date = date;
     }
 
     @Override

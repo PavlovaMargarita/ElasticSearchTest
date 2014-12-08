@@ -4,6 +4,7 @@ import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.percolate.PercolateResponse;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.ImmutableSettings;
@@ -17,9 +18,12 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.sql.Date;
 import java.util.ArrayList;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 public class PersonTest {
 
@@ -95,11 +99,22 @@ public class PersonTest {
         transportClient.close();
     }
 
-//    @Test
     public void testInsert(){
         Person addPerson = new Person();
-        addPerson.setFirstName("Petr");
-        addPerson.setLastName("Petrov");
+        addPerson.setFirstName("Sveta");
+        addPerson.setLastName("Qwerty");
+
+        GregorianCalendar gc = new GregorianCalendar();
+        int year = randBetween(1900, 2010);
+        gc.set(gc.YEAR, year);
+        int dayOfYear = randBetween(1, gc.getActualMaximum(gc.DAY_OF_YEAR));
+        gc.set(gc.DAY_OF_YEAR, dayOfYear);
+
+        java.util.Date date= new java.util.Date();
+        date.setTime(gc.getTimeInMillis());
+
+        addPerson.setDate(new Date(date.getTime()));
+
         String personId = addPerson(addPerson);
         Person getPerson = getPersonById(personId);
         Assert.assertEquals(addPerson, getPerson);
@@ -111,10 +126,11 @@ public class PersonTest {
         Person addPerson = new Person();
         addPerson.setFirstName("Petrov");
         addPerson.setLastName("Petr");
-        searchPersonLike("Petrov", "Petr");
+//        searchPersonOr("Petrov", "Petr");
+//        searchDate();
     }
 
-    private void searchPersonOneValueSeveralFields(String value, String... fieldNames){
+    private long searchPersonOneValueSeveralFields(String value, String... fieldNames){
 
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
         TransportClient transportClient = new TransportClient(settings);
@@ -126,14 +142,16 @@ public class PersonTest {
         List<Map<String,Object>> personList = new ArrayList<Map<String,Object>>();
         SearchResponse response = null;
         int i = 0;
+        long count = 0;
         while( response == null || response.getHits().hits().length != 0){
             response = client.prepareSearch("person_index")
                     .setTypes("person")
-                    .setQuery(QueryBuilders.multiMatchQuery("Petrov", "firstName", "lastName"))
+                    .setQuery(QueryBuilders.multiMatchQuery(value, fieldNames))
                     .setSize(scrollSize)
                     .setFrom(i * scrollSize)
                     .execute()
                     .actionGet();
+            count += response.getHits().getTotalHits();
             for(SearchHit hit : response.getHits()){
                 personList.add(hit.getSource());
             }
@@ -142,9 +160,10 @@ public class PersonTest {
 
         transportClient.close();
         client.close();
+        return count;
     }
 
-    private void searchPersonLike(String firstName, String lastName){
+    private long searchPersonLike(String value, String... fieldNames){
 
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
         TransportClient transportClient = new TransportClient(settings);
@@ -156,14 +175,16 @@ public class PersonTest {
         List<Map<String,Object>> personList = new ArrayList<Map<String,Object>>();
         SearchResponse response = null;
         int i = 0;
+        long count = 0;
         while( response == null || response.getHits().hits().length != 0){
             response = client.prepareSearch("person_index")
                     .setTypes("person")
-                    .setQuery(QueryBuilders.multiMatchQuery("Ivan", "firstName", "lastName").type(MatchQueryBuilder.Type.PHRASE_PREFIX))
+                    .setQuery(QueryBuilders.multiMatchQuery(value, fieldNames).type(MatchQueryBuilder.Type.PHRASE_PREFIX))
                     .setSize(scrollSize)
                     .setFrom(i * scrollSize)
                     .execute()
                     .actionGet();
+            count += response.getHits().getTotalHits();
             for(SearchHit hit : response.getHits()){
                 personList.add(hit.getSource());
             }
@@ -172,36 +193,10 @@ public class PersonTest {
 
         transportClient.close();
         client.close();
+        return count;
     }
 
-    private void searchPersonCount(String firstName, String lastName){
-
-        Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
-        TransportClient transportClient = new TransportClient(settings);
-        transportClient = transportClient.addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
-
-        Client client = transportClient;
-
-        int scrollSize = 1000;
-        List<Map<String,Object>> personList = new ArrayList<Map<String,Object>>();
-        SearchResponse response = null;
-        int i = 0;
-        while( response == null || response.getHits().hits().length != 0){
-            response = client.prepareSearch("person_index")
-                    .setTypes("person")
-                    .setQuery(QueryBuilders.multiMatchQuery("Ivan", "firstName", "lastName").type(MatchQueryBuilder.Type.PHRASE_PREFIX))
-                    .setSize(scrollSize)
-                    .setFrom(i * scrollSize)
-                    .execute()
-                    .actionGet();
-            response.getHits().getTotalHits();
-        }
-
-        transportClient.close();
-        client.close();
-    }
-
-    private void searchPersonOr(String firstName, String lastName) {
+    private long searchPersonOr(String firstName, String lastName) {
 
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
         TransportClient transportClient = new TransportClient(settings);
@@ -213,14 +208,16 @@ public class PersonTest {
         List<Map<String, Object>> personList = new ArrayList<Map<String, Object>>();
         SearchResponse response = null;
         int i = 0;
+        long count = 0;
         while (response == null || response.getHits().hits().length != 0) {
             response = client.prepareSearch("person_index")
                     .setTypes("person")
-                    .setQuery(QueryBuilders.disMaxQuery().add(QueryBuilders.matchQuery("firstName", "Ivanov")))
+                    .setQuery(QueryBuilders.disMaxQuery().add(QueryBuilders.matchQuery("firstName", "Ivanov")).add(QueryBuilders.matchQuery("firstName", "Petr")))
                     .setSize(scrollSize)
                     .setFrom(i * scrollSize)
                     .execute()
                     .actionGet();
+            count += response.getHits().getTotalHits();
             for (SearchHit hit : response.getHits()) {
                 personList.add(hit.getSource());
             }
@@ -228,9 +225,10 @@ public class PersonTest {
         }
         transportClient.close();
         client.close();
+        return count;
     }
 
-    private void searchPersonAnd(String firstName, String lastName) {
+    private long searchPersonAnd(String firstName, String lastName) {
 
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
         TransportClient transportClient = new TransportClient(settings);
@@ -242,15 +240,16 @@ public class PersonTest {
         List<Map<String, Object>> personList = new ArrayList<Map<String, Object>>();
         SearchResponse response = null;
         int i = 0;
+        long count = 0;
         while (response == null || response.getHits().hits().length != 0) {
             response = client.prepareSearch("person_index")
                     .setTypes("person")
-//                    .setQuery(QueryBuilders.matchAllQuery())
                     .setQuery(QueryBuilders.boolQuery().must(QueryBuilders.matchQuery("firstName", "Petr")).must(QueryBuilders.matchQuery("lastName", "Petrov")))
                     .setSize(scrollSize)
                     .setFrom(i * scrollSize)
                     .execute()
                     .actionGet();
+            count += response.getHits().getTotalHits();
             for (SearchHit hit : response.getHits()) {
                 personList.add(hit.getSource());
             }
@@ -258,9 +257,42 @@ public class PersonTest {
         }
         transportClient.close();
         client.close();
+        return count;
     }
 
-    public void getAllPerson(){
+    public long searchDate(String dateFrom, String dateEnd){
+        Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
+        TransportClient transportClient = new TransportClient(settings);
+        transportClient = transportClient.addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
+
+        Client client = transportClient;
+
+        int scrollSize = 1000;
+        List<Map<String, Object>> personList = new ArrayList<Map<String, Object>>();
+        SearchResponse response = null;
+        int i = 0;
+        long count = 0;
+        while (response == null || response.getHits().hits().length != 0) {
+            response = client.prepareSearch("person_index")
+                    .setTypes("person")
+//                    .setQuery(QueryBuilders.matchAllQuery())
+                    .setQuery(QueryBuilders.rangeQuery("date").from(dateFrom).to(dateEnd))
+                    .setSize(scrollSize)
+                    .setFrom(i * scrollSize)
+                    .execute()
+                    .actionGet();
+            count += response.getHits().getTotalHits();
+            for (SearchHit hit : response.getHits()) {
+                personList.add(hit.getSource());
+            }
+            i++;
+        }
+        transportClient.close();
+        client.close();
+        return count;
+    }
+
+    public void getAllPerson() throws ExecutionException, InterruptedException {
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
         TransportClient transportClient = new TransportClient(settings);
         transportClient = transportClient.addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
@@ -280,7 +312,9 @@ public class PersonTest {
                     .execute()
                     .actionGet();
             for(SearchHit hit : response.getHits()){
-                personList.add(hit.getSource());
+                Map<String, Object> element = hit.getSource();
+                element.put("_id", hit.getId());
+                personList.add(element);
             }
             i++;
         }
@@ -373,5 +407,9 @@ public class PersonTest {
         }
 
         deletePercolator("test", "three");
+    }
+
+    public int randBetween(int start, int end) {
+        return start + (int)Math.round(Math.random() * (end - start));
     }
 }
