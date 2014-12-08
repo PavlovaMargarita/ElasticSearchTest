@@ -4,7 +4,6 @@ import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.percolate.PercolateResponse;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.ImmutableSettings;
@@ -14,6 +13,9 @@ import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.index.query.*;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.facet.FacetBuilder;
+import org.elasticsearch.search.facet.FacetBuilders;
+import org.elasticsearch.search.facet.terms.TermsFacet;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -87,16 +89,13 @@ public class PersonTest {
 
     public void deletePerson(String id){
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
-        TransportClient transportClient = new TransportClient(settings);
-        transportClient = transportClient.addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
+        TransportClient client = new TransportClient(settings);
+        client = client.addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
 
-        Client client = transportClient;
-
-        DeleteResponse response = client.prepareDelete("person_index", "person", id)
+        client.prepareDelete("person_index", "person", id)
                 .execute()
                 .actionGet();
         client.close();
-        transportClient.close();
     }
 
     public void testInsert(){
@@ -104,14 +103,14 @@ public class PersonTest {
         addPerson.setFirstName("Sveta");
         addPerson.setLastName("Qwerty");
 
-        GregorianCalendar gc = new GregorianCalendar();
+        GregorianCalendar calendar = new GregorianCalendar();
         int year = randBetween(1900, 2010);
-        gc.set(gc.YEAR, year);
-        int dayOfYear = randBetween(1, gc.getActualMaximum(gc.DAY_OF_YEAR));
-        gc.set(gc.DAY_OF_YEAR, dayOfYear);
+        calendar.set(calendar.YEAR, year);
+        int dayOfYear = randBetween(1, calendar.getActualMaximum(calendar.DAY_OF_YEAR));
+        calendar.set(calendar.DAY_OF_YEAR, dayOfYear);
 
         java.util.Date date= new java.util.Date();
-        date.setTime(gc.getTimeInMillis());
+        date.setTime(calendar.getTimeInMillis());
 
         addPerson.setDate(new Date(date.getTime()));
 
@@ -126,6 +125,7 @@ public class PersonTest {
         Person addPerson = new Person();
         addPerson.setFirstName("Petrov");
         addPerson.setLastName("Petr");
+        searchPersonOr();
 //        searchPersonOr("Petrov", "Petr");
 //        searchDate();
     }
@@ -196,7 +196,7 @@ public class PersonTest {
         return count;
     }
 
-    private long searchPersonOr(String firstName, String lastName) {
+    private long searchPersonOr() {
 
         Settings settings = ImmutableSettings.settingsBuilder().put("cluster.name", "elasticsearch").build();
         TransportClient transportClient = new TransportClient(settings);
@@ -213,6 +213,9 @@ public class PersonTest {
             response = client.prepareSearch("person_index")
                     .setTypes("person")
                     .setQuery(QueryBuilders.disMaxQuery().add(QueryBuilders.matchQuery("firstName", "Ivanov")).add(QueryBuilders.matchQuery("firstName", "Petr")))
+                    .addFacet(FacetBuilders.termsFacet("firstName")
+                            .field("firstName")
+                            .size(10000))
                     .setSize(scrollSize)
                     .setFrom(i * scrollSize)
                     .execute()
@@ -222,6 +225,19 @@ public class PersonTest {
                 personList.add(hit.getSource());
             }
             i++;
+
+            // sr is here your SearchResponse object
+            TermsFacet f = (TermsFacet) response.getFacets().facetsAsMap().get("firstName");
+
+            f.getTotalCount();      // Total terms doc count
+            f.getOtherCount();      // Not shown terms doc count
+            f.getMissingCount();    // Without term doc count
+
+// For each entry
+            for (TermsFacet.Entry entry : f) {
+                entry.getTerm();    // Term
+                entry.getCount();   // Doc count
+            }
         }
         transportClient.close();
         client.close();
@@ -245,6 +261,7 @@ public class PersonTest {
             response = client.prepareSearch("person_index")
                     .setTypes("person")
                     .setQuery(QueryBuilders.boolQuery().must(QueryBuilders.matchQuery("firstName", "Petr")).must(QueryBuilders.matchQuery("lastName", "Petrov")))
+
                     .setSize(scrollSize)
                     .setFrom(i * scrollSize)
                     .execute()
@@ -257,6 +274,7 @@ public class PersonTest {
         }
         transportClient.close();
         client.close();
+
         return count;
     }
 
